@@ -32,50 +32,70 @@ SERVICE_NAME = "CLI_YT_Player"
 USERNAME = "user_account"
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 MUSIC_CATEGORY_ID = "10"
+def get_client_config():
+    """Obtém as configurações de cliente das variáveis de ambiente ou do arquivo local."""
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
 
+    if client_id and client_secret:
+        return {
+            "installed": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": ["http://localhost:8080/"],
+            }
+        }
+
+    if os.path.exists("client_secret.json"):
+        with open("client_secret.json", "r") as f:
+            return json.load(f)
+
+    return None
+    
 
 def get_youtube_service(interactive=False):
-    """Obtém o serviço da API do YouTube usando token.json para persistência contínua."""
+    """Obtém o serviço da API do YouTube usando token.json e variáveis de ambiente."""
     creds = None
 
-    # 1. Carrega credenciais do arquivo token.json se existir
     if os.path.exists(TOKEN_FILE):
         try:
             creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
         except Exception:
             creds = None
 
-    # 2. Se as credenciais expiraram, renova automaticamente
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
-            # Salva o token renovado de volta no arquivo
             with open(TOKEN_FILE, "w") as token:
                 token.write(creds.to_json())
         except Exception:
             creds = None
 
-    # 3. Se não há credenciais válidas, realiza o fluxo completo se interativo
     if not creds or not creds.valid:
         if not interactive:
             return None
 
-        if not os.path.exists("client_secret.json"):
-            raise FileNotFoundError("O arquivo 'client_secret.json' não foi encontrado.")
+        client_config = get_client_config()
+        if not client_config:
+            raise FileNotFoundError(
+                "Credenciais da aplicação não configuradas. "
+                "Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET ou forneça 'client_secret.json'."
+            )
 
-        flow = InstalledAppFlow.from_client_secrets_file(
-            "client_secret.json",
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
             SCOPES,
             redirect_uri="http://localhost:8080/",
         )
-        
+
         creds = flow.run_local_server(
             port=8080,
             prompt="consent",
             access_type="offline"
         )
 
-        # Salva o token completo (com refresh_token) no arquivo local
         with open(TOKEN_FILE, "w") as token:
             token.write(creds.to_json())
 
