@@ -4,8 +4,9 @@ const { execSync, spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-const projectRoot = path.join(__dirname, "..");
-const venvDir = path.join(projectRoot, ".venv");
+// O diretório do pacote instalado pelo NPX no cache do usuário
+const packageDir = path.join(__dirname, "..");
+const venvDir = path.join(packageDir, ".venv");
 const isWindows = process.platform === "win32";
 
 const pythonExecutable = isWindows
@@ -16,7 +17,7 @@ const pipExecutable = isWindows
   ? path.join(venvDir, "Scripts", "pip.exe")
   : path.join(venvDir, "bin", "pip");
 
-// Insira aqui suas credenciais do Google OAuth ou leia de um arquivo local .env durante a build
+// Credenciais do Google OAuth
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "SEU_CLIENT_ID.apps.googleusercontent.com";
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "GOCSPX-SEU_CLIENT_SECRET";
 
@@ -31,25 +32,27 @@ function checkPython() {
 }
 
 function setupVenv() {
+  const pythonCmd = isWindows ? "python" : "python3";
+
   if (!fs.existsSync(venvDir)) {
     console.log("⚙️  Criando ambiente virtual Python...");
-    const pythonCmd = isWindows ? "python" : "python3";
     execSync(`${pythonCmd} -m venv "${venvDir}"`, { stdio: "inherit" });
   }
 
-  const reqFile = path.join(projectRoot, "requirements.txt");
+  const reqFile = path.join(packageDir, "requirements.txt");
   if (fs.existsSync(reqFile)) {
-    console.log("📦 Instalando dependências...");
+    console.log("📦 Instalando dependências no ambiente isolado...");
     execSync(`"${pipExecutable}" install -q -r "${reqFile}"`, { stdio: "inherit" });
   }
 }
 
 function runPlayer() {
-  const mainPy = path.join(projectRoot, "main.py");
+  const mainPy = path.join(packageDir, "main.py");
 
+  // Roda usando obrigatoriamente o python.exe do .venv
   const child = spawn(pythonExecutable, [mainPy], {
     stdio: "inherit",
-    cwd: process.cwd(), // Executa no diretório atual do usuário para salvar o token.json localmente
+    cwd: process.cwd(), // Permite salvar token.json na pasta de execução do usuário
     env: {
       ...process.env,
       GOOGLE_CLIENT_ID: CLIENT_ID,
