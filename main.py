@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+import sys
 import threading
 import time
 from pathlib import Path
@@ -29,72 +30,55 @@ from textual.widgets import (
     Select,
 )
 
-
-def load_env_vars():
-    """Carrega as variáveis do arquivo .env no ambiente se ainda não estiverem configuradas."""
-    env_paths = [
-        Path.cwd() / ".env",
-        Path(__file__).resolve().parent / ".env",
-    ]
-
-    for env_path in env_paths:
-        if env_path.exists():
-            try:
-                with open(env_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            key, val = line.split("=", 1)
-                            key = key.strip()
-                            val = val.strip().strip("'\"")
-                            if key not in os.environ:
-                                os.environ[key] = val
-                break
-            except Exception:
-                pass
-
-
-# Executa o carregamento das variáveis no início da aplicação
-load_env_vars()
+# Tenta carregar variáveis do .env se existir, sem obrigar o usuário a ter um
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path.cwd() / ".env")
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
 
 socket.setdefaulttimeout(15)
-TOKEN_FILE = "token.json"
-SERVICE_NAME = "CLI_YT_Player"
-USERNAME = "user_account"
+
+# Diretório para salvar o token do usuário na pasta de configurações do sistema
+CONFIG_DIR = Path.home() / ".config" / "meu-player-tui"
+CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+TOKEN_FILE = CONFIG_DIR / "token.json"
+
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 MUSIC_CATEGORY_ID = "10"
 
+# Credenciais padrão da aplicação Desktop para o fluxo do usuário
+DEFAULT_CLIENT_ID = os.environ.get(
+    "GOOGLE_CLIENT_ID",
+    "50790974670-qshvlqkejhu0ksj76v0t0lpcq3krm593.apps.googleusercontent.com"  # Substitua pelas suas credenciais reais do GCP (Desktop App)
+)
+DEFAULT_CLIENT_SECRET = os.environ.get(
+    "GOOGLE_CLIENT_SECRET",
+    "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"  # Substitua pelas suas credenciais reais do GCP (Desktop App)
+)
+
 
 def get_client_config():
-    """Obtém as configurações de cliente das variáveis de ambiente ou do arquivo local."""
-    client_id = os.environ.get("GOOGLE_CLIENT_ID")
-    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-
-    if client_id and client_secret:
-        return {
-            "installed": {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost:8080/"],
-            }
+    """Retorna a configuração OAuth 2.0 padrão para aplicação desktop."""
+    return {
+        "installed": {
+            "client_id": DEFAULT_CLIENT_ID,
+            "client_secret": DEFAULT_CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": ["http://localhost:8080/"],
         }
-
-    if os.path.exists("client_secret.json"):
-        with open("client_secret.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    return None
+    }
 
 
 def get_youtube_service(interactive=False):
-    """Obtém o serviço da API do YouTube usando token.json e variáveis de ambiente."""
+    """Obtém a conexão com a API do YouTube para ver as curtidas do usuário."""
     creds = None
 
-    if os.path.exists(TOKEN_FILE):
+    if TOKEN_FILE.exists():
         try:
-            creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
         except Exception:
             creds = None
 
@@ -111,12 +95,6 @@ def get_youtube_service(interactive=False):
             return None
 
         client_config = get_client_config()
-        if not client_config:
-            raise FileNotFoundError(
-                "Credenciais da aplicação não configuradas. "
-                "Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no arquivo .env ou forneça 'client_secret.json'."
-            )
-
         flow = InstalledAppFlow.from_client_config(
             client_config,
             SCOPES,
@@ -308,7 +286,7 @@ class MusicPlayerApp(App):
                     yield Button("⏩ +10s", id="btn_forward")
                     yield Button("⏹ Parar", id="btn_stop", variant="error")
 
-                yield Label("Status: Inicializando...", id="status")
+                yield Label("Status: Pronto.", id="status")
 
         yield Footer()
 
@@ -317,9 +295,7 @@ class MusicPlayerApp(App):
             self.youtube_api = get_youtube_service(interactive=False)
             status = self.query_one("#status", Label)
             if self.youtube_api:
-                self.call_from_thread(status.update, "[green]Sessão carregada com sucesso![/green]")
-            else:
-                self.call_from_thread(status.update, "[yellow]Faça login para ver suas curtidas.[/yellow]")
+                self.call_from_thread(status.update, "[green]Sessão de usuário carregada com sucesso![/green]")
 
         threading.Thread(target=auto_auth, daemon=True).start()
 
@@ -353,11 +329,11 @@ class MusicPlayerApp(App):
 
     def _authenticate_youtube(self) -> None:
         status = self.query_one("#status", Label)
-        status.update("[yellow]Autenticando no Google...[/yellow]")
+        status.update("[yellow]Abra o navegador para autorizar o acesso...[/yellow]")
 
         try:
             self.youtube_api = get_youtube_service(interactive=True)
-            self.call_from_thread(status.update, "[green]Conta autenticada com sucesso![/green]")
+            self.call_from_thread(status.update, "[green]Login realizado com sucesso![/green]")
         except Exception as e:
             self.call_from_thread(status.update, f"[red]Erro na autenticação: {e}[/red]")
 
@@ -404,7 +380,7 @@ class MusicPlayerApp(App):
 
             except Exception as e:
                 self.is_loading_more = False
-                self.call_from_thread(status.update, f"[red]Erro ao carregar: {e}[/red]")
+                self.call_from_thread(status.update, f"[red]Erro ao carregar curtidas: {e}[/red]")
 
         if not self.is_loading_more:
             self.is_loading_more = True
@@ -483,7 +459,7 @@ class MusicPlayerApp(App):
                 target=self._search_youtube, args=(self.last_query, True), daemon=True
             ).start()
 
-    # --- REPRODUÇÃO E AUDIO ---
+    # --- REPRODUÇÃO E ÁUDIO ---
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         index = event.list_view.index
@@ -523,7 +499,6 @@ class MusicPlayerApp(App):
                         direct_url = info["url"]
                         self.duration_seconds = info.get("duration", 0)
 
-                    # Passa opções ao PyAV para manter a conexão HTTP/TCP estável
                     container_options = {
                         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
                         "reconnect": "1",
@@ -536,7 +511,6 @@ class MusicPlayerApp(App):
                     sample_rate = audio_stream.codec_context.sample_rate or 48000
                     time_base = float(audio_stream.time_base)
 
-                    # Se foi uma reconexão no meio da música, avança para a última posição
                     if self.current_position_seconds > 0:
                         target_pts = int(self.current_position_seconds / time_base)
                         container.seek(target_pts, stream=audio_stream)
@@ -587,7 +561,6 @@ class MusicPlayerApp(App):
                                     rms = np.sqrt(np.mean(audio_data ** 2))
                                     self.call_from_thread(self._update_playback_ui, rms)
 
-                    # Se a execução chegou até o fim sem exceção nem pedido de parada, sai do loop
                     break
 
                 except (av.FFmpegError, OSError, Exception) as e:

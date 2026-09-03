@@ -1,7 +1,8 @@
 # Arquivos de credenciais do Google OAuth
-client_secret.json
+node_modules/
+.env
 token.json
-*.json
+client_secret.json
 
 # Ambientes virtuais e cache do Python (opcional, mas recomendado)
 __pycache__/
