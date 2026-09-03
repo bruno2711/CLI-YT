@@ -1,6 +1,6 @@
 {
   "name": "meu-player-tui",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "YouTube TUI Player executável via NPX",
   "main": "bin/cli.js",
   "bin": {
