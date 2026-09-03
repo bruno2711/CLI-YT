@@ -1,0 +1,11 @@
+# Arquivos de credenciais do Google OAuth
+client_secret.json
+token.json
+*.json
+
+# Ambientes virtuais e cache do Python (opcional, mas recomendado)
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
