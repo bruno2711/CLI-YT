@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+require('dotenv').config();
+
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 const { execSync, spawn } = require("child_process");
 const path = require("path");
@@ -16,10 +20,6 @@ const pythonExecutable = isWindows
 const pipExecutable = isWindows
   ? path.join(venvDir, "Scripts", "pip.exe")
   : path.join(venvDir, "bin", "pip");
-
-// Credenciais do Google OAuth
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "SEU_CLIENT_ID.apps.googleusercontent.com";
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "GOCSPX-SEU_CLIENT_SECRET";
 
 function checkPython() {
   try {
