@@ -1,0 +1,12 @@
+{
+  "name": "meu-player-tui",
+  "version": "1.0.0",
+  "description": "YouTube TUI Player executável via NPX",
+  "main": "bin/cli.js",
+  "bin": {
+    "meu-player-tui": "bin/cli.js"
+  },
+  "keywords": ["tui", "youtube", "music", "cli"],
+  "author": "Bruno Soares",
+  "license": "MIT"
+}
