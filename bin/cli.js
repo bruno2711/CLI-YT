@@ -1,17 +1,18 @@
 #!/usr/bin/env node
-require('dotenv').config();
-
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 const { execSync, spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 
-// O diretório do pacote instalado pelo NPX no cache do usuário
+// Carrega o arquivo .env da pasta atual
+require("dotenv").config({ path: path.join(process.cwd(), ".env") });
+
 const packageDir = path.join(__dirname, "..");
-const venvDir = path.join(packageDir, ".venv");
 const isWindows = process.platform === "win32";
+
+// Ambiente virtual isolado no Temp do usuário
+const venvDir = path.join(os.tmpdir(), "cli-yt-venv");
 
 const pythonExecutable = isWindows
   ? path.join(venvDir, "Scripts", "python.exe")
@@ -20,6 +21,10 @@ const pythonExecutable = isWindows
 const pipExecutable = isWindows
   ? path.join(venvDir, "Scripts", "pip.exe")
   : path.join(venvDir, "bin", "pip");
+
+// Tenta pegar do .env ou do ambiente do sistema
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 function checkPython() {
   try {
@@ -34,14 +39,14 @@ function checkPython() {
 function setupVenv() {
   const pythonCmd = isWindows ? "python" : "python3";
 
-  if (!fs.existsSync(venvDir)) {
-    console.log("⚙️  Criando ambiente virtual Python...");
+  if (!fs.existsSync(pythonExecutable)) {
+    console.log("⚙️  Criando ambiente virtual Python isolado...");
     execSync(`${pythonCmd} -m venv "${venvDir}"`, { stdio: "inherit" });
   }
 
   const reqFile = path.join(packageDir, "requirements.txt");
   if (fs.existsSync(reqFile)) {
-    console.log("📦 Instalando dependências no ambiente isolado...");
+    console.log("📦 Verificando/Instalando dependências...");
     execSync(`"${pipExecutable}" install -q -r "${reqFile}"`, { stdio: "inherit" });
   }
 }
@@ -49,14 +54,14 @@ function setupVenv() {
 function runPlayer() {
   const mainPy = path.join(packageDir, "main.py");
 
-  // Roda usando obrigatoriamente o python.exe do .venv
+  // Repassa o ambiente e garante as chaves no process.env
   const child = spawn(pythonExecutable, [mainPy], {
     stdio: "inherit",
-    cwd: process.cwd(), // Permite salvar token.json na pasta de execução do usuário
+    cwd: process.cwd(),
     env: {
       ...process.env,
-      GOOGLE_CLIENT_ID: CLIENT_ID,
-      GOOGLE_CLIENT_SECRET: CLIENT_SECRET,
+      GOOGLE_CLIENT_ID: CLIENT_ID || "",
+      GOOGLE_CLIENT_SECRET: CLIENT_SECRET || "",
     },
   });
 

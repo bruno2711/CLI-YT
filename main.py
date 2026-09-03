@@ -3,11 +3,14 @@ import os
 import socket
 import threading
 import time
+from pathlib import Path
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
 import av
 import numpy as np
 import sounddevice as sd
@@ -26,12 +29,42 @@ from textual.widgets import (
     Select,
 )
 
+
+def load_env_vars():
+    """Carrega as variáveis do arquivo .env no ambiente se ainda não estiverem configuradas."""
+    env_paths = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent / ".env",
+    ]
+
+    for env_path in env_paths:
+        if env_path.exists():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, val = line.split("=", 1)
+                            key = key.strip()
+                            val = val.strip().strip("'\"")
+                            if key not in os.environ:
+                                os.environ[key] = val
+                break
+            except Exception:
+                pass
+
+
+# Executa o carregamento das variáveis no início da aplicação
+load_env_vars()
+
 socket.setdefaulttimeout(15)
 TOKEN_FILE = "token.json"
 SERVICE_NAME = "CLI_YT_Player"
 USERNAME = "user_account"
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 MUSIC_CATEGORY_ID = "10"
+
+
 def get_client_config():
     """Obtém as configurações de cliente das variáveis de ambiente ou do arquivo local."""
     client_id = os.environ.get("GOOGLE_CLIENT_ID")
@@ -49,11 +82,11 @@ def get_client_config():
         }
 
     if os.path.exists("client_secret.json"):
-        with open("client_secret.json", "r") as f:
+        with open("client_secret.json", "r", encoding="utf-8") as f:
             return json.load(f)
 
     return None
-    
+
 
 def get_youtube_service(interactive=False):
     """Obtém o serviço da API do YouTube usando token.json e variáveis de ambiente."""
@@ -68,7 +101,7 @@ def get_youtube_service(interactive=False):
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
-            with open(TOKEN_FILE, "w") as token:
+            with open(TOKEN_FILE, "w", encoding="utf-8") as token:
                 token.write(creds.to_json())
         except Exception:
             creds = None
@@ -81,7 +114,7 @@ def get_youtube_service(interactive=False):
         if not client_config:
             raise FileNotFoundError(
                 "Credenciais da aplicação não configuradas. "
-                "Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET ou forneça 'client_secret.json'."
+                "Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no arquivo .env ou forneça 'client_secret.json'."
             )
 
         flow = InstalledAppFlow.from_client_config(
@@ -93,10 +126,10 @@ def get_youtube_service(interactive=False):
         creds = flow.run_local_server(
             port=8080,
             prompt="consent",
-            access_type="offline"
+            access_type="offline",
         )
 
-        with open(TOKEN_FILE, "w") as token:
+        with open(TOKEN_FILE, "w", encoding="utf-8") as token:
             token.write(creds.to_json())
 
     return build("youtube", "v3", credentials=creds)
