@@ -1,10 +1,19 @@
 {
-  "name": "meu-player-tui",
-  "version": "1.0.12",
+  "name": "git-cli-yt",
+  "version": "1.1.9",
   "description": "YouTube TUI Player executável via NPX",
   "main": "bin/cli.js",
   "bin": {
+    "git-cli-yt": "bin/cli.js",
     "meu-player-tui": "bin/cli.js"
+  },
+  "files": [
+    "bin/cli.js",
+    "main.py",
+    "requirements.txt"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "tui",

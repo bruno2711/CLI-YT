@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
-// Carrega o arquivo .env da pasta atual
+// Carrega o arquivo .env da pasta atual se existir
 require("dotenv").config({ path: path.join(process.cwd(), ".env") });
 
 const packageDir = path.join(__dirname, "..");
@@ -21,10 +21,6 @@ const pythonExecutable = isWindows
 const pipExecutable = isWindows
   ? path.join(venvDir, "Scripts", "pip.exe")
   : path.join(venvDir, "bin", "pip");
-
-// Tenta pegar do .env ou do ambiente do sistema
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 function checkPython() {
   try {
@@ -54,15 +50,11 @@ function setupVenv() {
 function runPlayer() {
   const mainPy = path.join(packageDir, "main.py");
 
-  // Repassa o ambiente e garante as chaves no process.env
+  // Passa o process.env original sem criar chaves vazias
   const child = spawn(pythonExecutable, [mainPy], {
     stdio: "inherit",
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      GOOGLE_CLIENT_ID: CLIENT_ID || "",
-      GOOGLE_CLIENT_SECRET: CLIENT_SECRET || "",
-    },
+    env: process.env,
   });
 
   child.on("exit", (code) => {
