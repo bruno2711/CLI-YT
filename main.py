@@ -30,7 +30,7 @@ from textual.widgets import (
     Select,
 )
 
-# Tenta carregar variáveis do .env se existir, sem obrigar o usuário a ter um
+# Tenta carregar variáveis do .env se existir
 try:
     from dotenv import load_dotenv
     load_dotenv(Path.cwd() / ".env")
@@ -40,7 +40,7 @@ except ImportError:
 
 socket.setdefaulttimeout(15)
 
-# Diretório para salvar o token do usuário na pasta de configurações do sistema
+# Diretório para salvar o token do usuário
 CONFIG_DIR = Path.home() / ".config" / "meu-player-tui"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 TOKEN_FILE = CONFIG_DIR / "token.json"
@@ -48,14 +48,13 @@ TOKEN_FILE = CONFIG_DIR / "token.json"
 SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 MUSIC_CATEGORY_ID = "10"
 
-# Credenciais padrão da aplicação Desktop para o fluxo do usuário
 DEFAULT_CLIENT_ID = os.environ.get(
     "GOOGLE_CLIENT_ID",
-    "50790974670-qshvlqkejhu0ksj76v0t0lpcq3krm593.apps.googleusercontent.com"  # Substitua pelas suas credenciais reais do GCP (Desktop App)
+    "50790974670-qshvlqkejhu0ksj76v0t0lpcq3krm593.apps.googleusercontent.com"
 )
 DEFAULT_CLIENT_SECRET = os.environ.get(
     "GOOGLE_CLIENT_SECRET",
-    "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"  # Substitua pelas suas credenciais reais do GCP (Desktop App)
+    "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"
 )
 
 
@@ -73,7 +72,7 @@ def get_client_config():
 
 
 def get_youtube_service(interactive=False):
-    """Obtém a conexão com a API do YouTube para ver as curtidas do usuário."""
+    """Obtém a conexão com a API do YouTube."""
     creds = None
 
     if TOKEN_FILE.exists():
@@ -405,28 +404,27 @@ class MusicPlayerApp(App):
         ).start()
 
     def _search_youtube(self, query: str, load_more=False) -> None:
-        offset = len(self.raw_results) + 1 if load_more else 1
+        count = 15
+        search_query = f"ytsearch{count}:{query}"
 
         ydl_opts = {
-            "format": "bestaudio/best/best",
+            "format": "bestaudio/best",
             "quiet": True,
-            "playliststart": offset,
-            "playlistend": offset + 15,
-            "default_search": f"ytsearch{offset + 15}",
+            "extract_flat": True,
             "noplaylist": True,
         }
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(query, download=False)
-                entries = info.get("entries", [])
+                info = ydl.extract_info(search_query, download=False)
+                entries = info.get("entries", []) if info else []
 
                 new_entries = [
                     {
-                        "title": entry.get("title"),
-                        "url": entry.get("webpage_url") or entry.get("url"),
+                        "title": entry.get("title", "Sem título"),
+                        "url": entry.get("url") or f"https://www.youtube.com/watch?v={entry.get('id')}",
                         "duration": entry.get("duration", 0),
-                        "is_music": entry.get("categories") and "Music" in entry.get("categories") or True,
+                        "is_music": True,
                     }
                     for entry in entries
                     if entry
@@ -474,7 +472,12 @@ class MusicPlayerApp(App):
         now_playing = self.query_one("#now-playing", Label)
         status = self.query_one("#status", Label)
 
+        # Interrompe totalmente e síncronamente qualquer som anterior
         self._stop_audio()
+
+        self.current_position_seconds = 0
+        self.duration_seconds = 0
+        self.seek_target_seconds = None
 
         now_playing.update(f"[bold cyan]Tocando:[/bold cyan] {track['title']}")
         status.update("[yellow]Obtendo áudio...[/yellow]")
@@ -511,10 +514,7 @@ class MusicPlayerApp(App):
                     sample_rate = audio_stream.codec_context.sample_rate or 48000
                     time_base = float(audio_stream.time_base)
 
-                    if self.current_position_seconds > 0:
-                        target_pts = int(self.current_position_seconds / time_base)
-                        container.seek(target_pts, stream=audio_stream)
-
+                    # Instancia o Resampler
                     resampler = av.AudioResampler(format="fltp", layout="stereo", rate=sample_rate)
 
                     with sd.OutputStream(
@@ -523,44 +523,52 @@ class MusicPlayerApp(App):
                         self.is_playing = True
                         self.call_from_thread(status.update, "[green]Reproduzindo ♪[/green]")
 
-                        for packet in container.demux(audio_stream):
+                        # Itera direto nos frames de áudio (evita pacotes desalinhados)
+                        for frame in container.decode(audio_stream):
                             if self.stop_event.is_set():
                                 break
 
+                            # Trata Seek (+10s / -10s)
                             if self.seek_target_seconds is not None:
                                 target_pts = int(self.seek_target_seconds / time_base)
                                 container.seek(target_pts, stream=audio_stream)
                                 self.current_position_seconds = self.seek_target_seconds
                                 self.seek_target_seconds = None
+
+                                # LIMPEZA CRÍTICA: Reseta o resampler no seek para evitar eco
+                                resampler = av.AudioResampler(format="fltp", layout="stereo", rate=sample_rate)
                                 continue
 
-                            for frame in packet.decode():
+                            self.pause_event.wait()
+
+                            if frame.pts is not None:
+                                self.current_position_seconds = frame.pts * time_base
+
+                            resampled_frames = resampler.resample(frame)
+                            if not resampled_frames:
+                                continue
+
+                            for r_frame in resampled_frames:
                                 if self.stop_event.is_set():
                                     break
 
-                                self.pause_event.wait()
+                                audio_array = r_frame.to_ndarray()
 
-                                if frame.pts is not None:
-                                    self.current_position_seconds = frame.pts * time_base
+                                if audio_array.ndim == 1:
+                                    audio_array = np.vstack((audio_array, audio_array))
 
-                                resampled_frames = resampler.resample(frame)
-                                if not resampled_frames:
-                                    continue
+                                audio_array = audio_array * self.volume
+                                audio_data = np.ascontiguousarray(audio_array.T, dtype=np.float32)
 
-                                for r_frame in resampled_frames:
-                                    audio_array = r_frame.to_ndarray()
+                                output_stream.write(audio_data)
 
-                                    if audio_array.ndim == 1:
-                                        audio_array = np.vstack((audio_array, audio_array))
+                                rms = np.sqrt(np.mean(audio_data ** 2))
+                                self.call_from_thread(self._update_playback_ui, rms)
 
-                                    audio_array = audio_array * self.volume
-                                    audio_data = np.ascontiguousarray(audio_array.T, dtype=np.float32)
+                        # Limpa o buffer de saída do áudio ao encerrar a faixa
+                        output_stream.stop()
 
-                                    output_stream.write(audio_data)
-
-                                    rms = np.sqrt(np.mean(audio_data ** 2))
-                                    self.call_from_thread(self._update_playback_ui, rms)
-
+                    container.close()
                     break
 
                 except (av.FFmpegError, OSError, Exception) as e:
@@ -571,7 +579,7 @@ class MusicPlayerApp(App):
                     if retry_count <= max_retries:
                         self.call_from_thread(
                             status.update,
-                            f"[yellow]Conexão perdida. Reconectando ({retry_count}/{max_retries})...[/yellow]",
+                            f"[yellow]Reconectando ({retry_count}/{max_retries})...[/yellow]",
                         )
                         time.sleep(1)
                     else:
@@ -611,10 +619,14 @@ class MusicPlayerApp(App):
     # --- CONTROLES E ATALHOS ---
 
     def _stop_audio(self) -> None:
+        """Interrompe e encerra síncronamente qualquer thread de reprodução em execução."""
         self.stop_event.set()
         self.pause_event.set()
+
         if self.stream_thread and self.stream_thread.is_alive():
-            self.stream_thread.join(timeout=1.0)
+            if threading.current_thread() != self.stream_thread:
+                self.stream_thread.join(timeout=2.0)
+
         self.is_playing = False
 
     def action_toggle_play(self) -> None:
