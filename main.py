@@ -1,21 +1,20 @@
 import json
 import os
+import queue
 import socket
 import sys
 import threading
 import time
 from pathlib import Path
 
+import av
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-
-import av
 import numpy as np
 import sounddevice as sd
-import yt_dlp
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import (
@@ -29,10 +28,12 @@ from textual.widgets import (
     ProgressBar,
     Select,
 )
+import yt_dlp
 
 # Tenta carregar variáveis do .env se existir
 try:
     from dotenv import load_dotenv
+
     load_dotenv(Path.cwd() / ".env")
     load_dotenv(Path(__file__).resolve().parent / ".env")
 except ImportError:
@@ -50,11 +51,10 @@ MUSIC_CATEGORY_ID = "10"
 
 DEFAULT_CLIENT_ID = os.environ.get(
     "GOOGLE_CLIENT_ID",
-    "50790974670-qshvlqkejhu0ksj76v0t0lpcq3krm593.apps.googleusercontent.com"
+    "50790974670-qshvlqkejhu0ksj76v0t0lpcq3krm593.apps.googleusercontent.com",
 )
 DEFAULT_CLIENT_SECRET = os.environ.get(
-    "GOOGLE_CLIENT_SECRET",
-    "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"
+    "GOOGLE_CLIENT_SECRET", "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"
 )
 
 
@@ -77,7 +77,9 @@ def get_youtube_service(interactive=False):
 
     if TOKEN_FILE.exists():
         try:
-            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+            creds = Credentials.from_authorized_user_file(
+                str(TOKEN_FILE), SCOPES
+            )
         except Exception:
             creds = None
 
@@ -245,22 +247,33 @@ class MusicPlayerApp(App):
         with Horizontal(id="main"):
             with Vertical(id="sidebar"):
                 yield Label("[bold]Buscar ou Conta[/bold]")
-                yield Input(placeholder="Nome ou artista...", id="search_input")
+                yield Input(
+                    placeholder="Nome ou artista...", id="search_input"
+                )
 
                 with Horizontal(id="auth-buttons"):
                     yield Button("🔑 Login", id="btn_login", variant="primary")
-                    yield Button("👍 Curtidas", id="btn_liked", variant="default")
+                    yield Button(
+                        "👍 Curtidas", id="btn_liked", variant="default"
+                    )
 
                 yield Label("[bold]Filtro de Conteúdo:[/bold]")
                 yield Select(
-                    [("🎵 Apenas Músicas", "music"), ("🎬 Todos os Vídeos", "all")],
+                    [
+                        ("🎵 Apenas Músicas", "music"),
+                        ("🎬 Todos os Vídeos", "all"),
+                    ],
                     value="music",
                     id="filter_select",
                     allow_blank=False,
                 )
 
                 yield ListView(id="results_list")
-                yield Button("➕ Carregar Mais Músicas", id="btn_load_more", variant="default")
+                yield Button(
+                    "➕ Carregar Mais Músicas",
+                    id="btn_load_more",
+                    variant="default",
+                )
 
             with Vertical(id="content"):
                 yield Label("Nenhuma música selecionada", id="now-playing")
@@ -270,7 +283,9 @@ class MusicPlayerApp(App):
                 # Linha do Tempo e Progresso
                 with Horizontal(id="progress-container"):
                     yield Label("00:00 ", id="time_current")
-                    yield ProgressBar(id="song_progress", total=100, show_percentage=False)
+                    yield ProgressBar(
+                        id="song_progress", total=100, show_percentage=False
+                    )
                     yield Label(" 00:00", id="time_total")
 
                 # Controle de Volume
@@ -281,7 +296,9 @@ class MusicPlayerApp(App):
 
                 with Horizontal(id="controls"):
                     yield Button("⏪ -10s", id="btn_rewind")
-                    yield Button("▶ / ⏸ (Espaço)", id="btn_toggle", variant="primary")
+                    yield Button(
+                        "▶ / ⏸ (Espaço)", id="btn_toggle", variant="primary"
+                    )
                     yield Button("⏩ +10s", id="btn_forward")
                     yield Button("⏹ Parar", id="btn_stop", variant="error")
 
@@ -294,7 +311,10 @@ class MusicPlayerApp(App):
             self.youtube_api = get_youtube_service(interactive=False)
             status = self.query_one("#status", Label)
             if self.youtube_api:
-                self.call_from_thread(status.update, "[green]Sessão de usuário carregada com sucesso![/green]")
+                self.call_from_thread(
+                    status.update,
+                    "[green]Sessão de usuário carregada com sucesso![/green]",
+                )
 
         threading.Thread(target=auto_auth, daemon=True).start()
 
@@ -322,7 +342,9 @@ class MusicPlayerApp(App):
             list_view.append(ListItem(Label(f"{tag} {item['title']}")))
 
         status = self.query_one("#status", Label)
-        status.update(f"[green]Exibindo {len(self.filtered_results)} item(ns).[/green]")
+        status.update(
+            f"[green]Exibindo {len(self.filtered_results)} item(ns).[/green]"
+        )
 
     # --- AUTENTICAÇÃO E CURTIDAS COM PAGINAÇÃO ---
 
@@ -332,9 +354,13 @@ class MusicPlayerApp(App):
 
         try:
             self.youtube_api = get_youtube_service(interactive=True)
-            self.call_from_thread(status.update, "[green]Login realizado com sucesso![/green]")
+            self.call_from_thread(
+                status.update, "[green]Login realizado com sucesso![/green]"
+            )
         except Exception as e:
-            self.call_from_thread(status.update, f"[red]Erro na autenticação: {e}[/red]")
+            self.call_from_thread(
+                status.update, f"[red]Erro na autenticação: {e}[/red]"
+            )
 
     def _fetch_liked_videos(self, load_more=False) -> None:
         status = self.query_one("#status", Label)
@@ -363,7 +389,8 @@ class MusicPlayerApp(App):
                     {
                         "title": item["snippet"]["title"],
                         "url": f"https://www.youtube.com/watch?v={item['id']}",
-                        "is_music": item["snippet"].get("categoryId") == MUSIC_CATEGORY_ID,
+                        "is_music": item["snippet"].get("categoryId")
+                        == MUSIC_CATEGORY_ID,
                     }
                     for item in items
                 ]
@@ -379,7 +406,9 @@ class MusicPlayerApp(App):
 
             except Exception as e:
                 self.is_loading_more = False
-                self.call_from_thread(status.update, f"[red]Erro ao carregar curtidas: {e}[/red]")
+                self.call_from_thread(
+                    status.update, f"[red]Erro ao carregar curtidas: {e}[/red]"
+                )
 
         if not self.is_loading_more:
             self.is_loading_more = True
@@ -408,10 +437,13 @@ class MusicPlayerApp(App):
         search_query = f"ytsearch{count}:{query}"
 
         ydl_opts = {
-            "format": "bestaudio/best",
+            "format": "bestaudio/best/b",
             "quiet": True,
-            "extract_flat": True,
-            "noplaylist": True,
+            "no_warnings": True,
+            "nocheckcertificate": True,
+            "extractor_args": {
+                "youtube": {"player_client": ["mweb", "web", "android"]}
+            },
         }
 
         try:
@@ -422,7 +454,8 @@ class MusicPlayerApp(App):
                 new_entries = [
                     {
                         "title": entry.get("title", "Sem título"),
-                        "url": entry.get("url") or f"https://www.youtube.com/watch?v={entry.get('id')}",
+                        "url": entry.get("url")
+                        or f"https://www.youtube.com/watch?v={entry.get('id')}",
                         "duration": entry.get("duration", 0),
                         "is_music": True,
                     }
@@ -454,7 +487,9 @@ class MusicPlayerApp(App):
         elif self.last_source_type == "search" and self.last_query:
             self.is_loading_more = True
             threading.Thread(
-                target=self._search_youtube, args=(self.last_query, True), daemon=True
+                target=self._search_youtube,
+                args=(self.last_query, True),
+                daemon=True,
             ).start()
 
     # --- REPRODUÇÃO E ÁUDIO ---
@@ -472,7 +507,6 @@ class MusicPlayerApp(App):
         now_playing = self.query_one("#now-playing", Label)
         status = self.query_one("#status", Label)
 
-        # Interrompe totalmente e síncronamente qualquer som anterior
         self._stop_audio()
 
         self.current_position_seconds = 0
@@ -489,60 +523,116 @@ class MusicPlayerApp(App):
             self.stop_event.clear()
             self.pause_event.set()
 
+            pcm_buffer = bytearray()
+            pcm_lock = threading.Lock()
+            played_samples = 0
+
+            def audio_callback(outdata, frames, time_info, status_flags):
+                nonlocal pcm_buffer, played_samples
+                bytes_needed = frames * 2 * 4  # frames * 2 canais * 4 bytes (float32)
+
+                with pcm_lock:
+                    if len(pcm_buffer) >= bytes_needed:
+                        chunk = pcm_buffer[:bytes_needed]
+                        pcm_buffer = pcm_buffer[bytes_needed:]
+                        outdata[:] = np.frombuffer(chunk, dtype=np.float32).reshape(
+                            frames, 2
+                        )
+                        if self.pause_event.is_set():
+                            played_samples += frames
+                    else:
+                        outdata.fill(0)
+
             while retry_count <= max_retries and not self.stop_event.is_set():
                 try:
                     ydl_opts = {
-                        "format": "bestaudio/best",
+                        "format": "bestaudio/best/b",
                         "quiet": True,
+                        "no_warnings": True,
                         "nocheckcertificate": True,
+                        "extractor_args": {
+                            "youtube": {"player_client": ["mweb", "web", "android"]}
+                        },
                     }
 
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(track["url"], download=False)
                         direct_url = info["url"]
                         self.duration_seconds = info.get("duration", 0)
+                        headers = info.get("http_headers", {})
+
+                    headers_str = "".join([f"{k}: {v}\r\n" for k, v in headers.items()])
 
                     container_options = {
-                        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                        "user_agent": headers.get(
+                            "User-Agent",
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                        ),
+                        "headers": headers_str,
                         "reconnect": "1",
                         "reconnect_streamed": "1",
                         "reconnect_delay_max": "5",
                     }
 
                     container = av.open(direct_url, options=container_options)
-                    audio_stream = next(s for s in container.streams if s.type == "audio")
-                    sample_rate = audio_stream.codec_context.sample_rate or 48000
+
+                    audio_stream = next(
+                        (s for s in container.streams if s.type == "audio"), None
+                    )
+
+                    if audio_stream is None:
+                        raise ValueError("Nenhuma faixa de áudio encontrada no fluxo do vídeo.")
+
+                    sample_rate = (
+                        audio_stream.codec_context.sample_rate or 48000
+                    )
                     time_base = float(audio_stream.time_base)
 
-                    # Instancia o Resampler
-                    resampler = av.AudioResampler(format="fltp", layout="stereo", rate=sample_rate)
+                    resampler = av.AudioResampler(
+                        format="fltp", layout="stereo", rate=sample_rate
+                    )
 
                     with sd.OutputStream(
-                        samplerate=sample_rate, channels=2, dtype="float32"
-                    ) as output_stream:
+                        samplerate=sample_rate,
+                        channels=2,
+                        dtype="float32",
+                        callback=audio_callback,
+                        blocksize=1024,
+                    ):
                         self.is_playing = True
-                        self.call_from_thread(status.update, "[green]Reproduzindo ♪[/green]")
+                        self.call_from_thread(
+                            status.update, "[green]Reproduzindo ♪[/green]"
+                        )
 
-                        # Itera direto nos frames de áudio (evita pacotes desalinhados)
+                        last_ui_update = 0
+
                         for frame in container.decode(audio_stream):
                             if self.stop_event.is_set():
                                 break
 
-                            # Trata Seek (+10s / -10s)
+                            # Controla a velocidade de decodificação para não sobrecarregar o buffer
+                            max_buffer_bytes = sample_rate * 2 * 4 * 3  # ~3 segundos de áudio
+                            while len(pcm_buffer) > max_buffer_bytes and not self.stop_event.is_set():
+                                time.sleep(0.05)
+
                             if self.seek_target_seconds is not None:
-                                target_pts = int(self.seek_target_seconds / time_base)
+                                target_pts = int(
+                                    self.seek_target_seconds / time_base
+                                )
                                 container.seek(target_pts, stream=audio_stream)
-                                self.current_position_seconds = self.seek_target_seconds
+                                played_samples = int(self.seek_target_seconds * sample_rate)
+                                with pcm_lock:
+                                    pcm_buffer.clear()
                                 self.seek_target_seconds = None
 
-                                # LIMPEZA CRÍTICA: Reseta o resampler no seek para evitar eco
-                                resampler = av.AudioResampler(format="fltp", layout="stereo", rate=sample_rate)
+                                resampler = av.AudioResampler(
+                                    format="fltp",
+                                    layout="stereo",
+                                    rate=sample_rate,
+                                )
                                 continue
 
                             self.pause_event.wait()
-
-                            if frame.pts is not None:
-                                self.current_position_seconds = frame.pts * time_base
 
                             resampled_frames = resampler.resample(frame)
                             if not resampled_frames:
@@ -553,20 +643,28 @@ class MusicPlayerApp(App):
                                     break
 
                                 audio_array = r_frame.to_ndarray()
-
                                 if audio_array.ndim == 1:
                                     audio_array = np.vstack((audio_array, audio_array))
 
                                 audio_array = audio_array * self.volume
                                 audio_data = np.ascontiguousarray(audio_array.T, dtype=np.float32)
 
-                                output_stream.write(audio_data)
+                                with pcm_lock:
+                                    pcm_buffer.extend(audio_data.tobytes())
 
-                                rms = np.sqrt(np.mean(audio_data ** 2))
-                                self.call_from_thread(self._update_playback_ui, rms)
+                                # Atualização da interface sincronizada por tempo real de reprodução
+                                current_time = time.time()
+                                if current_time - last_ui_update >= 0.2:
+                                    self.current_position_seconds = played_samples / sample_rate
+                                    rms = np.sqrt(np.mean(audio_data**2)) if len(audio_data) > 0 else 0
+                                    self.call_from_thread(self._update_playback_ui, rms)
+                                    last_ui_update = current_time
 
-                        # Limpa o buffer de saída do áudio ao encerrar a faixa
-                        output_stream.stop()
+                        # Aguarda consumir os últimos bytes de áudio no buffer antes de finalizar
+                        while len(pcm_buffer) > 0 and not self.stop_event.is_set():
+                            self.current_position_seconds = played_samples / sample_rate
+                            self.call_from_thread(self._update_playback_ui, 0)
+                            time.sleep(0.1)
 
                     container.close()
                     break
@@ -584,16 +682,22 @@ class MusicPlayerApp(App):
                         time.sleep(1)
                     else:
                         self.is_playing = False
-                        self.call_from_thread(status.update, f"[red]Erro ao tocar: {e}[/red]")
+                        self.call_from_thread(
+                            status.update, f"[red]Erro ao tocar: {e}[/red]"
+                        )
 
             self.is_playing = False
             self.call_from_thread(self._reset_playback_ui)
 
-        self.stream_thread = threading.Thread(target=stream_worker, daemon=True)
+        self.stream_thread = threading.Thread(
+            target=stream_worker, daemon=True
+        )
         self.stream_thread.start()
 
     def _update_playback_ui(self, rms_volume: float) -> None:
-        curr_str = time.strftime("%M:%S", time.gmtime(self.current_position_seconds))
+        curr_str = time.strftime(
+            "%M:%S", time.gmtime(self.current_position_seconds)
+        )
         tot_str = time.strftime("%M:%S", time.gmtime(self.duration_seconds))
 
         self.query_one("#time_current", Label).update(f"{curr_str} ")
@@ -601,7 +705,10 @@ class MusicPlayerApp(App):
 
         progress_bar = self.query_one("#song_progress", ProgressBar)
         if self.duration_seconds > 0:
-            progress_bar.progress = (self.current_position_seconds / self.duration_seconds) * 100
+            progress_bar.progress = min(
+                100.0,
+                (self.current_position_seconds / self.duration_seconds) * 100,
+            )
 
         bars = [" ", " ", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
         level = min(int(rms_volume * 35), len(bars) - 1)
@@ -657,7 +764,9 @@ class MusicPlayerApp(App):
             self._stop_audio()
             self._reset_playback_ui()
             self.query_one("#status", Label).update("Reprodução parada.")
-            self.query_one("#now-playing", Label).update("Nenhuma música selecionada")
+            self.query_one("#now-playing", Label).update(
+                "Nenhuma música selecionada"
+            )
         elif b_id == "btn_vol_up":
             self._adjust_volume(0.1)
         elif b_id == "btn_vol_down":
@@ -667,7 +776,9 @@ class MusicPlayerApp(App):
         elif b_id == "btn_forward":
             self._seek(10)
         elif b_id == "btn_login":
-            threading.Thread(target=self._authenticate_youtube, daemon=True).start()
+            threading.Thread(
+                target=self._authenticate_youtube, daemon=True
+            ).start()
         elif b_id == "btn_liked":
             self.last_query = ""
             self.next_page_token = None
